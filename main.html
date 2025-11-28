@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard | Employee Management System</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100">
+
+    <div class="flex">
+
+        <!-- Sidebar -->
+        <aside class="w-64 bg-blue-800 text-white min-h-screen shadow-lg">
+            <div class="p-6">
+                <h1 class="text-2xl font-bold">EMS Dashboard</h1>
+            </div>
+
+            <nav class="mt-8 space-y-2">
+                <a href="#" class="flex items-center px-6 py-3 bg-blue-700">
+                    🏠 <span class="ml-3">Dashboard</span>
+                </a>
+
+                <a href="employees/list.php" class="flex items-center px-6 py-3 hover:bg-blue-700 transition">
+                    👥 <span class="ml-3">Employees</span>
+                </a>
+
+                <a href="#" class="flex items-center px-6 py-3 hover:bg-blue-700 transition">
+                    🏢 <span class="ml-3">Departments</span>
+                </a>
+
+                <a href="#" class="flex items-center px-6 py-3 hover:bg-blue-700 transition">
+                    📊 <span class="ml-3">Attendance</span>
+                </a>
+
+                <a href="#" class="flex items-center px-6 py-3 hover:bg-blue-700 transition">
+                    💼 <span class="ml-3">Salary</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1">
+
+            <!-- Top Navbar -->
+            <header class="bg-white shadow p-4 flex justify-between items-center">
+                <h2 class="text-2xl font-semibold">Dashboard</h2>
+                <div class="flex items-center space-x-4">
+                    <span class="font-medium text-gray-600">Admin</span>
+                    <img src="https://i.pravatar.cc/40" class="w-10 h-10 rounded-full border">
+                </div>
+            </header>
+
+            <!-- Dashboard Cards -->
+            <section class="p-6 grid grid-cols-1 md:grid-cols-4 gap-6">
+
+                <!-- Card 1 -->
+                <div class="bg-white p-6 rounded-xl shadow hover:shadow-xl transition">
+                    <div class="text-blue-600 text-4xl">👥</div>
+                    <h3 class="text-xl font-bold mt-3">Employees</h3>
+                    <p class="text-gray-500 text-sm">Manage all employees</p>
+                    <a href="employees/list.php"
+                       class="block mt-4 text-blue-700 font-semibold hover:underline">View Details →</a>
+                </div>
+
+                <!-- Card 2 -->
+                <div class="bg-white p-6 rounded-xl shadow hover:shadow-xl transition">
+                    <div class="text-green-600 text-4xl">📊</div>
+                    <h3 class="text-xl font-bold mt-3">Attendance</h3>
+                    <p class="text-gray-500 text-sm">Track daily attendance</p>
+                    <a href="#" class="block mt-4 text-green-700 font-semibold hover:underline">View Details →</a>
+                </div>
+
+                <!-- Card 3 -->
+                <div class="bg-white p-6 rounded-xl shadow hover:shadow-xl transition">
+                    <div class="text-yellow-500 text-4xl">🏢</div>
+                    <h3 class="text-xl font-bold mt-3">Departments</h3>
+                    <p class="text-gray-500 text-sm">Organize employee groups</p>
+                    <a href="#" class="block mt-4 text-yellow-600 font-semibold hover:underline">View Details →</a>
+                </div>
+
+                <!-- Card 4 -->
+                <div class="bg-white p-6 rounded-xl shadow hover:shadow-xl transition">
+                    <div class="text-purple-600 text-4xl">💼</div>
+                    <h3 class="text-xl font-bold mt-3">Salary</h3>
+                    <p class="text-gray-500 text-sm">Salary and payroll info</p>
+                    <a href="#" class="block mt-4 text-purple-700 font-semibold hover:underline">View Details →</a>
+                </div>
+            </section>
+
+            <!-- Recent Activities -->
+            <section class="px-6 pb-10">
+                <h3 class="text-2xl font-semibold mb-4">Recent Activities</h3>
+
+                <div class="bg-white rounded-xl shadow p-6">
+                    <ul class="space-y-4 text-gray-700">
+
+                        <li class="flex justify-between border-b pb-3">
+                            <span>✔ New employee <strong>John Doe</strong> added.</span>
+                            <span class="text-gray-500 text-sm">2 hours ago</span>
+                        </li>
+
+                        <li class="flex justify-between border-b pb-3">
+                            <span>✔ Department <strong>Sales</strong> updated.</span>
+                            <span class="text-gray-500 text-sm">5 hours ago</span>
+                        </li>
+
+                        <li class="flex justify-between">
+                            <span>✔ Attendance marked for <strong>38 employees</strong>.</span>
+                            <span class="text-gray-500 text-sm">Yesterday</span>
+                        </li>
+
+                    </ul>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+</body>
+
+</html>
