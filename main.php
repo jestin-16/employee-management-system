@@ -1,3 +1,13 @@
+<?php
+$con=mysqli_connect("localhost","root","");
+
+if(!$con){
+    echo "error";
+}
+mysqli_select_db($con,"employee-management");
+
+?>
+
 <!DOCTYPE html>
 <html lang="en">
 
@@ -24,7 +34,7 @@
                 <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="#">Employees</a>
                 <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="#">Attendance</a>
                 <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="#">Leave Requests</a>
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="#">Departments</a>
+                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="Departments.php">Departments</a>
                 <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="#">Settings</a>
             </nav>
         </aside>
