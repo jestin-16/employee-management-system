@@ -1,11 +1,90 @@
 <?php
-$con=mysqli_connect("localhost","root","");
+session_start();
+require_once 'db.php';
 
-if(!$con){
-    echo "error";
+// Redirect to login if not logged in
+if (!isset($_SESSION['user_id'])) {
+    header('Location: login.php');
+    exit;
 }
-mysqli_select_db($con,"employee-management");
 
+// Determine which page to show in the main content (simple router)
+$page = $_GET['page'] ?? 'dashboard';
+
+// ====== DASHBOARD QUERIES (used for the main dashboard view) ======
+
+// Total employees
+$totalEmployees = 0;
+$res = $conn->query("SELECT COUNT(*) AS cnt FROM employees");
+if ($res) {
+    $row = $res->fetch_assoc();
+    $totalEmployees = (int)$row['cnt'];
+}
+
+// Present today
+$presentToday = 0;
+$res = $conn->query("SELECT COUNT(*) AS cnt FROM attendance WHERE date = CURDATE() AND status = 'Present'");
+if ($res) {
+    $row = $res->fetch_assoc();
+    $presentToday = (int)$row['cnt'];
+}
+
+// On leave today (approved requests overlapping today)
+$onLeaveToday = 0;
+$res = $conn->query("SELECT COUNT(DISTINCT employee_id) AS cnt 
+                     FROM leave_requests 
+                     WHERE status = 'Approved' 
+                       AND start_date <= CURDATE() 
+                       AND end_date >= CURDATE()");
+if ($res) {
+    $row = $res->fetch_assoc();
+    $onLeaveToday = (int)$row['cnt'];
+}
+
+// Pending leave requests
+$pendingRequests = 0;
+$res = $conn->query("SELECT COUNT(*) AS cnt FROM leave_requests WHERE status = 'Pending'");
+if ($res) {
+    $row = $res->fetch_assoc();
+    $pendingRequests = (int)$row['cnt'];
+}
+
+// Employees list (limit 20)
+$employees = [];
+$sqlEmployees = "
+    SELECT e.employee_id,
+           CONCAT(e.first_name, ' ', e.last_name) AS full_name,
+           r.role_name,
+           d.department_name,
+           e.status
+    FROM employees e
+    LEFT JOIN roles r ON e.role_id = r.role_id
+    LEFT JOIN departments d ON e.department_id = d.department_id
+    ORDER BY e.created_at DESC
+    LIMIT 20
+";
+$res = $conn->query($sqlEmployees);
+if ($res) {
+    while ($row = $res->fetch_assoc()) {
+        $employees[] = $row;
+    }
+}
+
+// Recent activities (limit 5)
+$activities = [];
+$sqlActivities = "
+    SELECT a.activity_type, a.description, a.created_at, u.name AS user_name
+    FROM activity_logs a
+    LEFT JOIN users u ON a.user_id = u.user_id
+    ORDER BY a.created_at DESC
+    LIMIT 5
+";
+$res = $conn->query($sqlActivities);
+if ($res) {
+    while ($row = $res->fetch_assoc()) {
+        $activities[] = $row;
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -30,12 +109,12 @@ mysqli_select_db($con,"employee-management");
             <div class="p-6 text-2xl font-bold text-blue-600">HR Dashboard</div>
 
             <nav class="mt-4">
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="#">Dashboard</a>
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="#">Employees</a>
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="#">Attendance</a>
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="#">Leave Requests</a>
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="Departments.php">Departments</a>
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="#">Settings</a>
+                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="?page=dashboard">Dashboard</a>
+                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="?page=employees">Employees</a>
+                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="?page=attendance">Attendance</a>
+                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="?page=leave_requests">Leave Requests</a>
+                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="?page=departments">Departments</a>
+                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="?page=settings">Settings</a>
             </nav>
         </aside>
 
@@ -60,7 +139,9 @@ mysqli_select_db($con,"employee-management");
 
                     <div class="flex items-center space-x-2 cursor-pointer">
                         <img src="https://via.placeholder.com/35" class="rounded-full" />
-                        <span class="font-medium">HR Manager</span>
+                        <span class="font-medium">
+                            <?php echo htmlspecialchars($_SESSION['name']); ?>
+                        </span>
                     </div>
                 </div>
             </nav>
@@ -68,112 +149,181 @@ mysqli_select_db($con,"employee-management");
             <!-- ====== CONTENT AREA ====== -->
             <div class="p-6 overflow-auto">
 
-                <!-- ====== DASHBOARD CARDS ====== -->
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <?php if ($page === 'departments'): ?>
+                    <!-- Departments page content is loaded inside the main layout -->
+                    <?php include 'Departments.php'; ?>
 
-                    <div class="bg-white p-6 rounded-xl shadow">
-                        <p class="text-gray-500">Total Employees</p>
-                        <h2 class="text-3xl font-semibold mt-2">120</h2>
-                    </div>
+                <?php elseif ($page === 'employees'): ?>
+                    <!-- Employees page -->
+                    <?php include 'employees.php'; ?>
 
-                    <div class="bg-white p-6 rounded-xl shadow">
-                        <p class="text-gray-500">Present Today</p>
-                        <h2 class="text-3xl font-semibold mt-2">98</h2>
-                    </div>
+                <?php elseif ($page === 'attendance'): ?>
+                    <!-- Attendance page -->
+                    <?php include 'Attendance.php'; ?>
 
-                    <div class="bg-white p-6 rounded-xl shadow">
-                        <p class="text-gray-500">On Leave</p>
-                        <h2 class="text-3xl font-semibold mt-2">12</h2>
-                    </div>
+                <?php elseif ($page === 'leave_requests'): ?>
+                    <!-- Leave Requests page -->
+                    <?php include 'leave_requests.php'; ?>
 
-                    <div class="bg-white p-6 rounded-xl shadow">
-                        <p class="text-gray-500">Pending Requests</p>
-                        <h2 class="text-3xl font-semibold mt-2">5</h2>
-                    </div>
+                <?php elseif ($page === 'settings'): ?>
+                    <!-- Settings page -->
+                    <?php include 'settings.php'; ?>
 
-                </div>
+                <?php else: ?>
 
-                <!-- ====== EMPLOYEE TABLE + ACTIVITIES ====== -->
-                <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    <!-- ====== DASHBOARD CARDS ====== -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
 
-                    <!-- ====== EMPLOYEE TABLE ====== -->
-                    <div class="xl:col-span-2 bg-white rounded-xl shadow p-6">
-
-                        <div class="flex justify-between mb-4">
-                            <h2 class="text-xl font-semibold">Employees</h2>
-
-                            <button onclick="openModal()"
-                                class="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700">
-                                + Add Employee
-                            </button>
+                        <div class="bg-white p-6 rounded-xl shadow">
+                            <p class="text-gray-500">Total Employees</p>
+                            <h2 class="text-3xl font-semibold mt-2">
+                                <?php echo $totalEmployees; ?>
+                            </h2>
                         </div>
 
-                        <input type="text" placeholder="Search employees..."
-                            class="border px-4 py-2 rounded-lg w-full mb-4 bg-gray-50">
+                        <div class="bg-white p-6 rounded-xl shadow">
+                            <p class="text-gray-500">Present Today</p>
+                            <h2 class="text-3xl font-semibold mt-2">
+                                <?php echo $presentToday; ?>
+                            </h2>
+                        </div>
 
-                        <div class="overflow-auto">
-                            <table class="w-full text-left border-collapse">
-                                <thead>
-                                    <tr class="bg-gray-100 text-gray-600">
-                                        <th class="p-3">Employee ID</th>
-                                        <th class="p-3">Name</th>
-                                        <th class="p-3">Role</th>
-                                        <th class="p-3">Department</th>
-                                        <th class="p-3">Status</th>
-                                        <th class="p-3">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
+                        <div class="bg-white p-6 rounded-xl shadow">
+                            <p class="text-gray-500">On Leave</p>
+                            <h2 class="text-3xl font-semibold mt-2">
+                                <?php echo $onLeaveToday; ?>
+                            </h2>
+                        </div>
 
-                                    <tr class="border-b">
-                                        <td class="p-3">EMP101</td>
-                                        <td class="p-3">Jestin Shaji</td>
-                                        <td class="p-3">Developer</td>
-                                        <td class="p-3">IT</td>
-                                        <td class="p-3"><span
-                                                class="px-3 py-1 rounded-full text-sm bg-green-100 text-green-700">Active</span>
-                                        </td>
-                                        <td class="p-3 space-x-2">
-                                            <button class="text-blue-600">View</button>
-                                            <button class="text-yellow-600">Edit</button>
-                                            <button class="text-red-600">Delete</button>
-                                        </td>
-                                    </tr>
+                        <div class="bg-white p-6 rounded-xl shadow">
+                            <p class="text-gray-500">Pending Requests</p>
+                            <h2 class="text-3xl font-semibold mt-2">
+                                <?php echo $pendingRequests; ?>
+                            </h2>
+                        </div>
 
-                                </tbody>
-                            </table>
+                    </div>
+
+                    <!-- ====== EMPLOYEE TABLE + ACTIVITIES ====== -->
+                    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+
+                        <!-- ====== EMPLOYEE TABLE ====== -->
+                        <div class="xl:col-span-2 bg-white rounded-xl shadow p-6">
+
+                            <div class="flex justify-between mb-4">
+                                <h2 class="text-xl font-semibold">Employees</h2>
+
+                                <button onclick="openModal()"
+                                    class="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700">
+                                    + Add Employee
+                                </button>
+                            </div>
+
+                            <input type="text" placeholder="Search employees..."
+                                class="border px-4 py-2 rounded-lg w-full mb-4 bg-gray-50">
+
+                            <div class="overflow-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-100 text-gray-600">
+                                            <th class="p-3">Employee ID</th>
+                                            <th class="p-3">Name</th>
+                                            <th class="p-3">Role</th>
+                                            <th class="p-3">Department</th>
+                                            <th class="p-3">Status</th>
+                                            <th class="p-3">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php if (empty($employees)): ?>
+                                            <tr>
+                                                <td colspan="6" class="p-4 text-center text-gray-500">
+                                                    No employees found.
+                                                </td>
+                                            </tr>
+                                        <?php else: ?>
+                                            <?php foreach ($employees as $emp): ?>
+                                                <tr class="border-b">
+                                                    <td class="p-3">
+                                                        <?php echo htmlspecialchars($emp['employee_id']); ?>
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <?php echo htmlspecialchars($emp['full_name']); ?>
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <?php echo htmlspecialchars($emp['role_name'] ?? '—'); ?>
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <?php echo htmlspecialchars($emp['department_name'] ?? '—'); ?>
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <?php
+                                                        $status = $emp['status'];
+                                                        $statusClasses = [
+                                                            'Active' => 'bg-green-100 text-green-700',
+                                                            'Inactive' => 'bg-gray-100 text-gray-700',
+                                                            'On Leave' => 'bg-yellow-100 text-yellow-700'
+                                                        ];
+                                                        $cls = $statusClasses[$status] ?? 'bg-gray-100 text-gray-700';
+                                                        ?>
+                                                        <span class="px-3 py-1 rounded-full text-sm <?php echo $cls; ?>">
+                                                            <?php echo htmlspecialchars($status); ?>
+                                                        </span>
+                                                    </td>
+                                                    <td class="p-3 space-x-2">
+                                                        <button class="text-blue-600">View</button>
+                                                        <button class="text-yellow-600">Edit</button>
+                                                        <button class="text-red-600">Delete</button>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- ====== RECENT ACTIVITIES ====== -->
+                        <div class="bg-white rounded-xl shadow p-6">
+                            <h2 class="text-xl font-semibold mb-4">Recent Activities</h2>
+
+                            <ul class="space-y-4">
+                                <?php if (empty($activities)): ?>
+                                    <li class="text-gray-500">No recent activities.</li>
+                                <?php else: ?>
+                                    <?php foreach ($activities as $act): ?>
+                                        <li class="border-b pb-3 last:border-b-0">
+                                            <p class="font-medium">
+                                                <?php echo htmlspecialchars($act['activity_type']); ?>
+                                                <?php if (!empty($act['user_name'])): ?>
+                                                    <span class="text-sm text-gray-500">
+                                                        by <?php echo htmlspecialchars($act['user_name']); ?>
+                                                    </span>
+                                                <?php endif; ?>
+                                            </p>
+                                            <p class="text-sm text-gray-600">
+                                                <?php echo htmlspecialchars($act['description']); ?>
+                                            </p>
+                                            <span class="text-xs text-gray-500">
+                                                <?php echo htmlspecialchars($act['created_at']); ?>
+                                            </span>
+                                        </li>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </ul>
                         </div>
                     </div>
 
-                    <!-- ====== RECENT ACTIVITIES ====== -->
-                    <div class="bg-white rounded-xl shadow p-6">
-                        <h2 class="text-xl font-semibold mb-4">Recent Activities</h2>
+                    <!-- ====== ATTENDANCE CHART PLACEHOLDER ====== -->
+                    <div class="bg-white mt-6 p-6 rounded-xl shadow">
+                        <h2 class="text-xl font-semibold mb-4">Attendance Overview</h2>
 
-                        <ul class="space-y-4">
-                            <li class="border-b pb-3">
-                                <p class="font-medium">New employee added</p>
-                                <span class="text-sm text-gray-500">2 hours ago</span>
-                            </li>
-                            <li class="border-b pb-3">
-                                <p class="font-medium">Leave request approved</p>
-                                <span class="text-sm text-gray-500">5 hours ago</span>
-                            </li>
-                            <li>
-                                <p class="font-medium">Attendance updated</p>
-                                <span class="text-sm text-gray-500">1 day ago</span>
-                            </li>
-                        </ul>
+                        <div class="h-64 bg-gray-50 border rounded-lg flex items-center justify-center text-gray-500">
+                            Chart Placeholder
+                        </div>
                     </div>
-                </div>
 
-                <!-- ====== ATTENDANCE CHART PLACEHOLDER ====== -->
-                <div class="bg-white mt-6 p-6 rounded-xl shadow">
-                    <h2 class="text-xl font-semibold mb-4">Attendance Overview</h2>
-
-                    <div class="h-64 bg-gray-50 border rounded-lg flex items-center justify-center text-gray-500">
-                        Chart Placeholder
-                    </div>
-                </div>
+                <?php endif; ?>
 
             </div>
         </div>
