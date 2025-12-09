@@ -8,8 +8,18 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// Handle logout
+if (isset($_GET['logout'])) {
+    session_destroy();
+    header('Location: login.php');
+    exit;
+}
+
 // Determine which page to show in the main content (simple router)
 $page = $_GET['page'] ?? 'dashboard';
+
+// Search query parameter
+$searchQuery = $_GET['search'] ?? '';
 
 // ====== DASHBOARD QUERIES (used for the main dashboard view) ======
 
@@ -49,7 +59,7 @@ if ($res) {
     $pendingRequests = (int)$row['cnt'];
 }
 
-// Employees list (limit 20)
+// Employees list (limit 20) - with search support
 $employees = [];
 $sqlEmployees = "
     SELECT e.employee_id,
@@ -60,13 +70,38 @@ $sqlEmployees = "
     FROM employees e
     LEFT JOIN roles r ON e.role_id = r.role_id
     LEFT JOIN departments d ON e.department_id = d.department_id
-    ORDER BY e.created_at DESC
-    LIMIT 20
+    WHERE 1=1
 ";
-$res = $conn->query($sqlEmployees);
-if ($res) {
-    while ($row = $res->fetch_assoc()) {
-        $employees[] = $row;
+
+$params = [];
+$types = '';
+
+if ($searchQuery !== '' && $page === 'dashboard') {
+    $sqlEmployees .= " AND (e.employee_id LIKE ? OR e.first_name LIKE ? OR e.last_name LIKE ? OR e.email LIKE ?)";
+    $searchPattern = '%' . $searchQuery . '%';
+    $params = [$searchPattern, $searchPattern, $searchPattern, $searchPattern];
+    $types = 'ssss';
+}
+
+$sqlEmployees .= " ORDER BY e.created_at DESC LIMIT 20";
+
+if (!empty($params)) {
+    $stmt = $conn->prepare($sqlEmployees);
+    if ($stmt) {
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $employees[] = $row;
+        }
+        $stmt->close();
+    }
+} else {
+    $res = $conn->query($sqlEmployees);
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $employees[] = $row;
+        }
     }
 }
 
@@ -109,12 +144,12 @@ if ($res) {
             <div class="p-6 text-2xl font-bold text-blue-600">HR Dashboard</div>
 
             <nav class="mt-4">
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="?page=dashboard">Dashboard</a>
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="?page=employees">Employees</a>
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="?page=attendance">Attendance</a>
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="?page=leave_requests">Leave Requests</a>
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="?page=departments">Departments</a>
-                <a class="block py-3 px-6 text-gray-700 hover:bg-blue-50 hover:text-blue-600" href="?page=settings">Settings</a>
+                <a class="block py-3 px-6 <?php echo ($page === 'dashboard' || $page === '') ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'; ?>" href="?page=dashboard">Dashboard</a>
+                <a class="block py-3 px-6 <?php echo $page === 'employees' ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'; ?>" href="?page=employees">Employees</a>
+                <a class="block py-3 px-6 <?php echo $page === 'attendance' ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'; ?>" href="?page=attendance">Attendance</a>
+                <a class="block py-3 px-6 <?php echo $page === 'leave_requests' ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'; ?>" href="?page=leave_requests">Leave Requests</a>
+                <a class="block py-3 px-6 <?php echo $page === 'departments' ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'; ?>" href="?page=departments">Departments</a>
+                <a class="block py-3 px-6 <?php echo $page === 'settings' ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'; ?>" href="?page=settings">Settings</a>
             </nav>
         </aside>
 
@@ -126,22 +161,47 @@ if ($res) {
                 <div class="flex items-center space-x-3">
                     <button class="md:hidden text-gray-600 text-2xl" onclick="toggleSidebar()">☰</button>
 
-                    <input type="text" placeholder="Search..."
-                        class="border rounded-lg px-4 py-2 w-48 md:w-72 bg-gray-50 focus:outline-blue-500">
+                    <form method="get" action="main.php" class="flex items-center">
+                        <input type="hidden" name="page" value="<?php echo htmlspecialchars($page); ?>">
+                        <input type="text" 
+                               name="search" 
+                               placeholder="Search employees..."
+                               value="<?php echo htmlspecialchars($searchQuery); ?>"
+                               class="border rounded-lg px-4 py-2 w-48 md:w-72 bg-gray-50 focus:outline-blue-500">
+                        <?php if ($searchQuery): ?>
+                            <a href="?page=<?php echo htmlspecialchars($page); ?>" class="ml-2 text-gray-500 hover:text-gray-700">
+                                ✕
+                            </a>
+                        <?php endif; ?>
+                    </form>
                 </div>
 
                 <div class="flex items-center space-x-6">
-                    <button class="relative">
-                        <span class="text-xl">🔔</span>
-                        <span
-                            class="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1 rounded-full">3</span>
-                    </button>
+                    <?php if ($pendingRequests > 0): ?>
+                        <a href="?page=leave_requests&filter_status=Pending" class="relative">
+                            <span class="text-xl">🔔</span>
+                            <span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                                <?php echo $pendingRequests > 9 ? '9+' : $pendingRequests; ?>
+                            </span>
+                        </a>
+                    <?php else: ?>
+                        <button class="relative">
+                            <span class="text-xl">🔔</span>
+                        </button>
+                    <?php endif; ?>
 
-                    <div class="flex items-center space-x-2 cursor-pointer">
-                        <img src="https://via.placeholder.com/35" class="rounded-full" />
-                        <span class="font-medium">
-                            <?php echo htmlspecialchars($_SESSION['name']); ?>
-                        </span>
+                    <div class="relative group" id="userMenu">
+                        <div class="flex items-center space-x-2 cursor-pointer" onclick="toggleUserMenu()">
+                            <img src="https://via.placeholder.com/35" class="rounded-full" />
+                            <span class="font-medium">
+                                <?php echo htmlspecialchars($_SESSION['name']); ?>
+                            </span>
+                            <span class="text-gray-400">▼</span>
+                        </div>
+                        <div id="userDropdown" class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border hidden z-50">
+                            <a href="?page=settings&tab=profile" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-t-lg">Profile Settings</a>
+                            <a href="?logout=1" class="block px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-b-lg">Logout</a>
+                        </div>
                     </div>
                 </div>
             </nav>
@@ -210,17 +270,27 @@ if ($res) {
                         <!-- ====== EMPLOYEE TABLE ====== -->
                         <div class="xl:col-span-2 bg-white rounded-xl shadow p-6">
 
-                            <div class="flex justify-between mb-4">
-                                <h2 class="text-xl font-semibold">Employees</h2>
+                            <div class="flex justify-between items-center mb-4">
+                                <h2 class="text-xl font-semibold">Recent Employees</h2>
 
-                                <button onclick="openModal()"
-                                    class="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700">
-                                    + Add Employee
-                                </button>
+                                <div class="flex gap-2">
+                                    <a href="?page=employees"
+                                        class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg shadow hover:bg-gray-200 text-sm">
+                                        View All
+                                    </a>
+                                    <a href="?page=employees"
+                                        class="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 text-sm">
+                                        + Add Employee
+                                    </a>
+                                </div>
                             </div>
 
-                            <input type="text" placeholder="Search employees..."
-                                class="border px-4 py-2 rounded-lg w-full mb-4 bg-gray-50">
+                            <?php if ($searchQuery): ?>
+                                <div class="mb-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+                                    Showing results for: <strong><?php echo htmlspecialchars($searchQuery); ?></strong>
+                                    <a href="?page=dashboard" class="ml-2 underline">Clear search</a>
+                                </div>
+                            <?php endif; ?>
 
                             <div class="overflow-auto">
                                 <table class="w-full text-left border-collapse">
@@ -271,9 +341,11 @@ if ($res) {
                                                         </span>
                                                     </td>
                                                     <td class="p-3 space-x-2">
-                                                        <button class="text-blue-600">View</button>
-                                                        <button class="text-yellow-600">Edit</button>
-                                                        <button class="text-red-600">Delete</button>
+                                                        <a href="?page=employees&edit=<?php echo urlencode($emp['employee_id']); ?>" class="text-blue-600 hover:underline">View</a>
+                                                        <a href="?page=employees&edit=<?php echo urlencode($emp['employee_id']); ?>" class="text-yellow-600 hover:underline">Edit</a>
+                                                        <a href="?page=employees&delete=<?php echo urlencode($emp['employee_id']); ?>" 
+                                                           onclick="return confirm('Are you sure you want to delete this employee?');"
+                                                           class="text-red-600 hover:underline">Delete</a>
                                                     </td>
                                                 </tr>
                                             <?php endforeach; ?>
@@ -329,44 +401,38 @@ if ($res) {
         </div>
     </div>
 
-    <!-- ====== ADD EMPLOYEE MODAL ====== -->
-    <div id="modal"
-        class="fixed inset-0 bg-black bg-opacity-40 hidden justify-center items-center p-4 backdrop-blur-sm">
-
-        <div class="bg-white rounded-lg w-full max-w-lg p-6 shadow-lg">
-            <h2 class="text-xl font-semibold mb-4">Add New Employee</h2>
-
-            <div class="grid grid-cols-2 gap-4">
-                <input type="text" placeholder="Employee ID" class="p-2 border rounded">
-                <input type="text" placeholder="Name" class="p-2 border rounded">
-                <input type="text" placeholder="Role" class="p-2 border rounded">
-                <input type="text" placeholder="Department" class="p-2 border rounded">
-                <input type="text" placeholder="Status" class="p-2 border rounded">
-            </div>
-
-            <div class="text-right mt-4">
-                <button onclick="closeModal()" class="px-4 py-2 mr-2 rounded bg-gray-200">Cancel</button>
-                <button class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
-            </div>
-        </div>
-    </div>
-
     <!-- ====== JAVASCRIPT ====== -->
     <script>
-        const modal = document.getElementById("modal");
-
-        function openModal() {
-            modal.classList.remove("hidden");
-            modal.classList.add("flex");
-        }
-        function closeModal() {
-            modal.classList.add("hidden");
-        }
-
         function toggleSidebar() {
             const sidebar = document.querySelector("aside");
             sidebar.classList.toggle("hidden");
         }
+
+        function toggleUserMenu() {
+            const dropdown = document.getElementById("userDropdown");
+            dropdown.classList.toggle("hidden");
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const userMenu = document.getElementById("userMenu");
+            const dropdown = document.getElementById("userDropdown");
+            if (userMenu && dropdown && !userMenu.contains(event.target)) {
+                dropdown.classList.add("hidden");
+            }
+        });
+
+        // Auto-submit search on Enter key
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.querySelector('input[name="search"]');
+            if (searchInput) {
+                searchInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        this.form.submit();
+                    }
+                });
+            }
+        });
     </script>
 
 </body>
