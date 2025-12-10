@@ -26,8 +26,98 @@ if (isset($_GET['delete'])) {
     }
 }
 
+// Handle bulk attendance (POST)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action']) && $_POST['bulk_action'] === 'mark_all') {
+    $bulkDate = trim($_POST['bulk_date'] ?? '');
+    $bulkStatus = trim($_POST['bulk_status'] ?? 'Present');
+    $bulkCheckIn = trim($_POST['bulk_check_in'] ?? '');
+    $bulkCheckOut = trim($_POST['bulk_check_out'] ?? '');
+
+    // Validation
+    if ($bulkDate === '') {
+        $errors[] = 'Date is required for bulk attendance.';
+    }
+    if (!in_array($bulkStatus, ['Present', 'Absent', 'Late', 'Half Day', 'On Leave'])) {
+        $bulkStatus = 'Present';
+    }
+
+    if (empty($errors)) {
+        // Get all active employees
+        $allEmployees = [];
+        $empResult = $conn->query("SELECT employee_id FROM employees WHERE status = 'Active'");
+        if ($empResult) {
+            while ($row = $empResult->fetch_assoc()) {
+                $allEmployees[] = $row['employee_id'];
+            }
+        }
+
+        if (empty($allEmployees)) {
+            $errors[] = 'No active employees found.';
+        } else {
+            $successCount = 0;
+            $skipCount = 0;
+            $errorCount = 0;
+
+            foreach ($allEmployees as $empId) {
+                // Check if attendance already exists for this employee and date
+                $checkStmt = $conn->prepare("SELECT attendance_id FROM attendance WHERE employee_id = ? AND date = ?");
+                if ($checkStmt) {
+                    $checkStmt->bind_param('ss', $empId, $bulkDate);
+                    $checkStmt->execute();
+                    $result = $checkStmt->get_result();
+                    
+                    if ($result->num_rows > 0) {
+                        $skipCount++;
+                        $checkStmt->close();
+                        continue;
+                    }
+                    $checkStmt->close();
+                }
+
+                // Insert attendance record
+                $stmt = $conn->prepare("INSERT INTO attendance (employee_id, date, status) VALUES (?, ?, ?)");
+                if ($stmt) {
+                    $stmt->bind_param('sss', $empId, $bulkDate, $bulkStatus);
+                    if ($stmt->execute()) {
+                        $attendanceId = $conn->insert_id;
+                        // Update check_in and check_out if provided
+                        if ($bulkCheckIn !== '' || $bulkCheckOut !== '') {
+                            $updateTimeStmt = $conn->prepare("UPDATE attendance SET check_in = ?, check_out = ? WHERE attendance_id = ?");
+                            if ($updateTimeStmt) {
+                                $checkInNull = $bulkCheckIn === '' ? null : $bulkCheckIn;
+                                $checkOutNull = $bulkCheckOut === '' ? null : $bulkCheckOut;
+                                $updateTimeStmt->bind_param('ssi', $checkInNull, $checkOutNull, $attendanceId);
+                                $updateTimeStmt->execute();
+                                $updateTimeStmt->close();
+                            }
+                        }
+                        $successCount++;
+                    } else {
+                        $errorCount++;
+                    }
+                    $stmt->close();
+                } else {
+                    $errorCount++;
+                }
+            }
+
+            if ($successCount > 0) {
+                $success = "Bulk attendance marked successfully. {$successCount} employee(s) marked as {$bulkStatus}.";
+                if ($skipCount > 0) {
+                    $success .= " {$skipCount} record(s) already existed and were skipped.";
+                }
+                if ($errorCount > 0) {
+                    $errors[] = "Failed to mark attendance for {$errorCount} employee(s).";
+                }
+            } else {
+                $errors[] = 'Failed to mark bulk attendance.';
+            }
+        }
+    }
+}
+
 // Handle create / update (POST)
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['bulk_action']) || $_POST['bulk_action'] !== 'mark_all')) {
     $employeeId = trim($_POST['employee_id'] ?? '');
     $date = trim($_POST['date'] ?? '');
     $status = trim($_POST['status'] ?? 'Present');
@@ -277,6 +367,94 @@ $todayDate = date('Y-m-d');
         </form>
     </div>
 
+    <!-- Bulk Attendance Section -->
+    <div class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-lg font-semibold text-gray-800">Bulk Attendance</h2>
+            <button onclick="toggleBulkForm()" class="text-sm text-blue-600 hover:text-blue-800 font-medium">
+                <span id="bulkToggleText">+ Mark All Employees</span>
+            </button>
+        </div>
+        
+        <form method="post" id="bulkForm" class="hidden space-y-3">
+            <input type="hidden" name="bulk_action" value="mark_all">
+            
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">
+                        Date <span class="text-red-500">*</span>
+                    </label>
+                    <input
+                        type="date"
+                        name="bulk_date"
+                        value="<?php echo htmlspecialchars($todayDate); ?>"
+                        class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                    >
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">
+                        Status <span class="text-red-500">*</span>
+                    </label>
+                    <select
+                        name="bulk_status"
+                        class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                    >
+                        <option value="Present" selected>Present</option>
+                        <option value="Absent">Absent</option>
+                        <option value="Late">Late</option>
+                        <option value="Half Day">Half Day</option>
+                        <option value="On Leave">On Leave</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">
+                        Check In Time
+                    </label>
+                    <input
+                        type="time"
+                        name="bulk_check_in"
+                        class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">
+                        Check Out Time
+                    </label>
+                    <input
+                        type="time"
+                        name="bulk_check_out"
+                        class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-2">
+                <p class="text-xs text-gray-600">
+                    This will mark attendance for all <strong>Active</strong> employees. Existing records will be skipped.
+                </p>
+                <div class="flex gap-2">
+                    <button
+                        type="button"
+                        onclick="toggleBulkForm()"
+                        class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-300">
+                        Cancel
+                    </button>
+                    <button
+                        type="submit"
+                        onclick="return confirm('Are you sure you want to mark attendance for all active employees?');"
+                        class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+                        Mark All Employees
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Attendance records list -->
         <div class="lg:col-span-2">
@@ -473,3 +651,17 @@ $todayDate = date('Y-m-d');
     </div>
 </div>
 
+<script>
+function toggleBulkForm() {
+    const form = document.getElementById('bulkForm');
+    const toggleText = document.getElementById('bulkToggleText');
+    
+    if (form.classList.contains('hidden')) {
+        form.classList.remove('hidden');
+        toggleText.textContent = '− Hide Bulk Form';
+    } else {
+        form.classList.add('hidden');
+        toggleText.textContent = '+ Mark All Employees';
+    }
+}
+</script>

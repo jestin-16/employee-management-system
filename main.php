@@ -97,10 +97,10 @@ if (!empty($params)) {
         $stmt->close();
     }
 } else {
-    $res = $conn->query($sqlEmployees);
-    if ($res) {
-        while ($row = $res->fetch_assoc()) {
-            $employees[] = $row;
+$res = $conn->query($sqlEmployees);
+if ($res) {
+    while ($row = $res->fetch_assoc()) {
+        $employees[] = $row;
         }
     }
 }
@@ -119,6 +119,127 @@ if ($res) {
     while ($row = $res->fetch_assoc()) {
         $activities[] = $row;
     }
+}
+
+// ====== ATTENDANCE OVERVIEW DATA (for dashboard) ======
+$attendanceOverview = [];
+
+// Get attendance statistics for the last 7 days
+$attendanceStats = [];
+$attendanceByStatus = [
+    'Present' => 0,
+    'Absent' => 0,
+    'Late' => 0,
+    'Half Day' => 0,
+    'On Leave' => 0
+];
+
+// Last 7 days attendance data
+$last7Days = [];
+for ($i = 6; $i >= 0; $i--) {
+    $date = date('Y-m-d', strtotime("-$i days"));
+    $dayName = date('D', strtotime("-$i days"));
+    $last7Days[] = [
+        'date' => $date,
+        'day' => $dayName,
+        'present' => 0,
+        'absent' => 0,
+        'late' => 0,
+        'half_day' => 0,
+        'on_leave' => 0,
+        'total' => 0
+    ];
+}
+
+// Get attendance data for last 7 days
+$sqlLast7Days = "
+    SELECT DATE(date) as attendance_date, status, COUNT(*) as count
+    FROM attendance
+    WHERE date >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+    GROUP BY DATE(date), status
+    ORDER BY attendance_date ASC
+";
+$res = $conn->query($sqlLast7Days);
+if ($res) {
+    while ($row = $res->fetch_assoc()) {
+        $date = $row['attendance_date'];
+        $status = $row['status'];
+        $count = (int)$row['count'];
+        
+        // Find the day in our array
+        foreach ($last7Days as &$day) {
+            if ($day['date'] === $date) {
+                switch ($status) {
+                    case 'Present':
+                        $day['present'] = $count;
+                        break;
+                    case 'Absent':
+                        $day['absent'] = $count;
+                        break;
+                    case 'Late':
+                        $day['late'] = $count;
+                        break;
+                    case 'Half Day':
+                        $day['half_day'] = $count;
+                        break;
+                    case 'On Leave':
+                        $day['on_leave'] = $count;
+                        break;
+                }
+                $day['total'] += $count;
+                break;
+            }
+        }
+        unset($day);
+        
+        // Overall statistics
+        if (isset($attendanceByStatus[$status])) {
+            $attendanceByStatus[$status] += $count;
+        }
+    }
+}
+
+// Calculate attendance rate (last 7 days)
+$totalRecords = array_sum($attendanceByStatus);
+$attendanceRate = $totalRecords > 0 ? round(($attendanceByStatus['Present'] / $totalRecords) * 100, 1) : 0;
+
+// Get max count for chart scaling
+$maxCount = 0;
+foreach ($last7Days as $day) {
+    if ($day['total'] > $maxCount) {
+        $maxCount = $day['total'];
+    }
+}
+if ($maxCount === 0) $maxCount = 1; // Prevent division by zero
+
+// This month's attendance summary
+$monthStart = date('Y-m-01');
+$monthStats = [
+    'total_days' => 0,
+    'present' => 0,
+    'absent' => 0,
+    'late' => 0
+];
+$sqlMonthStats = "
+    SELECT status, COUNT(*) as count
+    FROM attendance
+    WHERE date >= ?
+    GROUP BY status
+";
+$stmt = $conn->prepare($sqlMonthStats);
+if ($stmt) {
+    $stmt->bind_param('s', $monthStart);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    while ($row = $result->fetch_assoc()) {
+        $status = $row['status'];
+        $count = (int)$row['count'];
+        if (isset($monthStats[$status])) {
+            $monthStats[$status] = $count;
+        }
+        $monthStats['total_days'] += $count;
+    }
+    $stmt->close();
 }
 ?>
 
@@ -167,7 +288,7 @@ if ($res) {
                                name="search" 
                                placeholder="Search employees..."
                                value="<?php echo htmlspecialchars($searchQuery); ?>"
-                               class="border rounded-lg px-4 py-2 w-48 md:w-72 bg-gray-50 focus:outline-blue-500">
+                        class="border rounded-lg px-4 py-2 w-48 md:w-72 bg-gray-50 focus:outline-blue-500">
                         <?php if ($searchQuery): ?>
                             <a href="?page=<?php echo htmlspecialchars($page); ?>" class="ml-2 text-gray-500 hover:text-gray-700">
                                 ✕
@@ -185,17 +306,17 @@ if ($res) {
                             </span>
                         </a>
                     <?php else: ?>
-                        <button class="relative">
-                            <span class="text-xl">🔔</span>
-                        </button>
+                    <button class="relative">
+                        <span class="text-xl">🔔</span>
+                    </button>
                     <?php endif; ?>
 
                     <div class="relative group" id="userMenu">
                         <div class="flex items-center space-x-2 cursor-pointer" onclick="toggleUserMenu()">
-                            <img src="https://via.placeholder.com/35" class="rounded-full" />
-                            <span class="font-medium">
-                                <?php echo htmlspecialchars($_SESSION['name']); ?>
-                            </span>
+                        <img src="https://via.placeholder.com/35" class="rounded-full" />
+                        <span class="font-medium">
+                            <?php echo htmlspecialchars($_SESSION['name']); ?>
+                        </span>
                             <span class="text-gray-400">▼</span>
                         </div>
                         <div id="userDropdown" class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border hidden z-50">
@@ -280,7 +401,7 @@ if ($res) {
                                     </a>
                                     <a href="?page=employees"
                                         class="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 text-sm">
-                                        + Add Employee
+                                    + Add Employee
                                     </a>
                                 </div>
                             </div>
@@ -386,12 +507,137 @@ if ($res) {
                         </div>
                     </div>
 
-                    <!-- ====== ATTENDANCE CHART PLACEHOLDER ====== -->
+                    <!-- ====== ATTENDANCE OVERVIEW ====== -->
                     <div class="bg-white mt-6 p-6 rounded-xl shadow">
-                        <h2 class="text-xl font-semibold mb-4">Attendance Overview</h2>
+                        <h2 class="text-xl font-semibold mb-6">Attendance Overview</h2>
 
-                        <div class="h-64 bg-gray-50 border rounded-lg flex items-center justify-center text-gray-500">
-                            Chart Placeholder
+                        <!-- Statistics Cards -->
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                <p class="text-sm text-blue-600 font-medium">Attendance Rate</p>
+                                <h3 class="text-2xl font-bold text-blue-700 mt-1"><?php echo $attendanceRate; ?>%</h3>
+                                <p class="text-xs text-gray-500 mt-1">Last 7 days</p>
+                            </div>
+                            <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+                                <p class="text-sm text-green-600 font-medium">Present</p>
+                                <h3 class="text-2xl font-bold text-green-700 mt-1"><?php echo $attendanceByStatus['Present']; ?></h3>
+                                <p class="text-xs text-gray-500 mt-1">Last 7 days</p>
+                            </div>
+                            <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+                                <p class="text-sm text-red-600 font-medium">Absent</p>
+                                <h3 class="text-2xl font-bold text-red-700 mt-1"><?php echo $attendanceByStatus['Absent']; ?></h3>
+                                <p class="text-xs text-gray-500 mt-1">Last 7 days</p>
+                            </div>
+                            <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                                <p class="text-sm text-yellow-600 font-medium">Late</p>
+                                <h3 class="text-2xl font-bold text-yellow-700 mt-1"><?php echo $attendanceByStatus['Late']; ?></h3>
+                                <p class="text-xs text-gray-500 mt-1">Last 7 days</p>
+                            </div>
+                        </div>
+
+                        <!-- 7-Day Attendance Chart -->
+                        <div class="mb-6">
+                            <h3 class="text-lg font-semibold mb-4 text-gray-800">Last 7 Days Attendance</h3>
+                            <div class="bg-gray-50 p-4 rounded-lg border">
+                                <div class="flex items-end justify-between gap-2 h-64">
+                                    <?php foreach ($last7Days as $day): ?>
+                                        <div class="flex-1 flex flex-col items-center">
+                                            <div class="w-full flex flex-col justify-end items-center gap-1" style="height: 200px;">
+                                                <!-- Stacked bars for different statuses -->
+                                                <div class="w-full flex flex-col-reverse gap-0.5">
+                                                    <?php if ($day['present'] > 0): ?>
+                                                        <div class="bg-green-500 rounded-t" 
+                                                             style="height: <?php echo ($day['present'] / $maxCount) * 180; ?>px;"
+                                                             title="Present: <?php echo $day['present']; ?>">
+                                                        </div>
+                                                    <?php endif; ?>
+                                                    <?php if ($day['absent'] > 0): ?>
+                                                        <div class="bg-red-500" 
+                                                             style="height: <?php echo ($day['absent'] / $maxCount) * 180; ?>px;"
+                                                             title="Absent: <?php echo $day['absent']; ?>">
+                                                        </div>
+                                                    <?php endif; ?>
+                                                    <?php if ($day['late'] > 0): ?>
+                                                        <div class="bg-yellow-500" 
+                                                             style="height: <?php echo ($day['late'] / $maxCount) * 180; ?>px;"
+                                                             title="Late: <?php echo $day['late']; ?>">
+                                                        </div>
+                                                    <?php endif; ?>
+                                                    <?php if ($day['half_day'] > 0): ?>
+                                                        <div class="bg-orange-500" 
+                                                             style="height: <?php echo ($day['half_day'] / $maxCount) * 180; ?>px;"
+                                                             title="Half Day: <?php echo $day['half_day']; ?>">
+                                                        </div>
+                                                    <?php endif; ?>
+                                                    <?php if ($day['on_leave'] > 0): ?>
+                                                        <div class="bg-blue-500 rounded-b" 
+                                                             style="height: <?php echo ($day['on_leave'] / $maxCount) * 180; ?>px;"
+                                                             title="On Leave: <?php echo $day['on_leave']; ?>">
+                                                        </div>
+                                                    <?php endif; ?>
+                                                    <?php if ($day['total'] === 0): ?>
+                                                        <div class="bg-gray-300 rounded" 
+                                                             style="height: 10px;"
+                                                             title="No data">
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <!-- Count label -->
+                                                <?php if ($day['total'] > 0): ?>
+                                                    <span class="text-xs font-medium text-gray-700 mt-1"><?php echo $day['total']; ?></span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <!-- Day label -->
+                                            <div class="mt-2 text-center">
+                                                <p class="text-xs font-medium text-gray-700"><?php echo $day['day']; ?></p>
+                                                <p class="text-xs text-gray-500"><?php echo date('M j', strtotime($day['date'])); ?></p>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                                <!-- Legend -->
+                                <div class="flex flex-wrap justify-center gap-4 mt-4 pt-4 border-t">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-4 h-4 bg-green-500 rounded"></div>
+                                        <span class="text-xs text-gray-600">Present</span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-4 h-4 bg-red-500 rounded"></div>
+                                        <span class="text-xs text-gray-600">Absent</span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-4 h-4 bg-yellow-500 rounded"></div>
+                                        <span class="text-xs text-gray-600">Late</span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-4 h-4 bg-orange-500 rounded"></div>
+                                        <span class="text-xs text-gray-600">Half Day</span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-4 h-4 bg-blue-500 rounded"></div>
+                                        <span class="text-xs text-gray-600">On Leave</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- This Month Summary -->
+                        <div>
+                            <h3 class="text-lg font-semibold mb-4 text-gray-800">This Month Summary</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div class="p-4 bg-gray-50 rounded-lg border">
+                                    <p class="text-sm text-gray-600">Total Records</p>
+                                    <h4 class="text-xl font-bold text-gray-800 mt-1"><?php echo $monthStats['total_days']; ?></h4>
+                                </div>
+                                <div class="p-4 bg-gray-50 rounded-lg border">
+                                    <p class="text-sm text-gray-600">Present This Month</p>
+                                    <h4 class="text-xl font-bold text-green-700 mt-1"><?php echo $monthStats['present']; ?></h4>
+                                </div>
+                                <div class="p-4 bg-gray-50 rounded-lg border">
+                                    <p class="text-sm text-gray-600">Absent This Month</p>
+                                    <h4 class="text-xl font-bold text-red-700 mt-1"><?php echo $monthStats['absent']; ?></h4>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
